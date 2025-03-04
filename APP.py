@@ -19,8 +19,9 @@ if not api_key:
 # 📜 Function to fetch & clean UDST policies
 def get_policies():
     """
-    Fetches UDST policies from the official website.
-    Extracts only meaningful policy titles and ensures at least 10 policies.
+    Fetches **only actual UDST policies** from the website.
+    Filters out irrelevant text (like quick links or menus).
+    Ensures at least 10 policies are extracted.
     """
     url = "https://www.udst.edu.qa/about-udst/institutional-excellence-ie/policies-and-procedures"
     response = requests.get(url)
@@ -31,25 +32,19 @@ def get_policies():
 
     soup = BeautifulSoup(response.text, "html.parser")
 
-    # Extract policy titles from <h2> and <h3> headings
-    raw_policies = [tag.text.strip() for tag in soup.find_all(["h2", "h3"])]
+    # Try extracting from <h3> and <h2> first (most likely where policies are)
+    policy_titles = [tag.text.strip() for tag in soup.find_all(["h2", "h3"]) if "Policy" in tag.text]
 
     # Remove duplicates and extra spaces
-    cleaned_policies = list(set([" ".join(policy.split()) for policy in raw_policies]))
+    policy_titles = list(set(policy_titles))
 
-    # Ensure at least 10 policies (fallback if fewer are found)
-    while len(cleaned_policies) < 10:
-        cleaned_policies.append(f"Placeholder Policy {len(cleaned_policies)+1}")
+    # Ensure at least 10 valid policies (fallback if fewer are found)
+    if len(policy_titles) < 10:
+        st.warning("⚠️ Less than 10 policies were found. Some placeholders added.")
+        while len(policy_titles) < 10:
+            policy_titles.append(f"Placeholder Policy {len(policy_titles)+1}")
 
-    return cleaned_policies[:10]  # Ensure exactly 10 policies
-
-# 📥 Fetch policies and prepare dropdown options
-policies = get_policies()
-
-if policies:
-    policy_titles = [f"📜 Policy {i+1}: {policies[i]}" for i in range(len(policies))]
-else:
-    policy_titles = ["❌ No policies found. Please check extraction."]
+    return policy_titles[:10]  # Keep only 10 policies
 
 # ✂️ Chunk the policy text for processing
 def chunk_text(text, chunk_size=256):
