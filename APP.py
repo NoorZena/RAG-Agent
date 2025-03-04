@@ -21,25 +21,29 @@ client = Mistral(api_key=api_key)
 
 # Function to scrape UDST policies
 def get_policies():
+    """
+    Fetches UDST policies from the official website.
+    Cleans unnecessary new lines and spaces.
+    Returns a list of up to 10 policies.
+    """
     url = "https://www.udst.edu.qa/about-udst/institutional-excellence-ie/policies-and-procedures"
     response = requests.get(url)
-
-    if response.status_code != 200:
-        raise ValueError("Failed to fetch UDST policies. Check the website status.")
-
-    soup = BeautifulSoup(response.text, "html.parser")
-    raw_policies = [tag.text.strip() for tag in soup.find_all("div") if tag.text.strip()]
-
-    # Clean policies: remove unnecessary newlines and whitespace
-    cleaned_policies = [" ".join(policy.split()) for policy in raw_policies]
     
-    return cleaned_policies[:10] if len(cleaned_policies) >= 10 else cleaned_policies
+    if response.status_code != 200:
+        raise ValueError("Failed to fetch UDST policies. Check the URL or website status.")
+    
+    soup = BeautifulSoup(response.text, "html.parser")
+    
+    # Extract meaningful policy titles, ignoring redundant ones
+    raw_policies = [tag.text.strip() for tag in soup.find_all("div") if tag.text.strip()]
+    
+    # Clean policies: Remove duplicate words and keep only distinct ones
+    cleaned_policies = list(set(raw_policies))  # Remove duplicates
+    cleaned_policies = [re.sub(r'\s+', ' ', policy) for policy in cleaned_policies]  # Remove excessive spaces
+    cleaned_policies = [policy for policy in cleaned_policies if len(policy) > 10]  # Remove too-short text
+    
+    return cleaned_policies[:10]  # Limit to 10 policies
 
-# Fetch policies and ensure at least 10 are available
-policies = get_policies()
-if len(policies) < 10:
-    st.warning("⚠️ Less than 10 policies found. Adding placeholders.")
-    policies += [f"Placeholder Policy {i+1}" for i in range(10 - len(policies))]
 
 # Function to chunk policies for embeddings
 def chunk_text(text, chunk_size=256):
