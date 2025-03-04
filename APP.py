@@ -14,7 +14,7 @@ api_key = os.getenv("MISTRAL_API_KEY")
 
 # Ensure API key is set
 if not api_key:
-    st.error("🚨 API Key is missing! Set your `MISTRAL_API_KEY` environment variable.")
+    st.error("🚨 API Key is missing! Set your MISTRAL_API_KEY environment variable.")
     st.stop()
 
 # Initialize Mistral Client
@@ -31,26 +31,27 @@ def get_policies():
     response = requests.get(url)
 
     if response.status_code != 200:
-        st.error("🚨 Failed to fetch UDST policies. Check the URL or website status.")
-        return []
+        st.warning("⚠️ Failed to fetch UDST policies. Using placeholder policies.")
+        return [f"Placeholder Policy {i+1}" for i in range(10)]
 
     soup = BeautifulSoup(response.text, "html.parser")
 
-    # Extract meaningful policy titles
+    # Extract policy titles
     raw_policies = [tag.text.strip() for tag in soup.find_all("div") if tag.text.strip()]
-
-    # Clean policies: Remove duplicate words and keep only distinct ones
+    
+    # Clean policies: Remove duplicate words and unnecessary spaces
     cleaned_policies = list(set(raw_policies))  # Remove duplicates
     cleaned_policies = [re.sub(r'\s+', ' ', policy) for policy in cleaned_policies]  # Remove excessive spaces
-    cleaned_policies = [policy for policy in cleaned_policies if len(policy) > 10]  # Remove too-short text
+    cleaned_policies = [policy for policy in cleaned_policies if len(policy) > 10]  # Remove short junk texts
 
-    if not cleaned_policies:
-        st.warning("⚠️ No policies found. Using placeholders instead.")
-        return [f"Placeholder Policy {i+1}" for i in range(10)]
+    # Ensure at least 10 policies exist
+    if len(cleaned_policies) < 10:
+        st.warning("⚠️ Less than 10 policies found. Adding placeholders.")
+        cleaned_policies += [f"Placeholder Policy {i+1}" for i in range(10 - len(cleaned_policies))]
 
     return cleaned_policies[:10]  # Limit to 10 policies
 
-# Fetch and process policies
+# Fetch policies
 policies = get_policies()
 
 # Function to chunk policies for embeddings
@@ -60,7 +61,7 @@ def chunk_text(text, chunk_size=256):
 # Process policies into chunks
 chunks = [chunk for policy in policies for chunk in chunk_text(policy)]
 
-# Function to get embeddings with retry logic
+# Function to get embeddings
 def get_embeddings(chunks, batch_size=1, delay=3, max_retries=5):
     embeddings = []
     for i in range(0, len(chunks), batch_size):
@@ -81,18 +82,15 @@ def get_embeddings(chunks, batch_size=1, delay=3, max_retries=5):
     return embeddings
 
 # Generate embeddings
-if policies and chunks:
-    text_embeddings = get_embeddings(chunks)
-else:
-    text_embeddings = []
+text_embeddings = get_embeddings(chunks)
 
-# Store embeddings in FAISS if available
+# Store embeddings in FAISS
 if text_embeddings:
     d = len(text_embeddings[0])
     index = faiss.IndexFlatL2(d)
     index.add(np.array(text_embeddings))
 else:
-    index = None
+    st.error("🚨 No embeddings generated. Check API key or input text.")
 
 # Streamlit UI Setup
 st.title("📜 UDST Policy Chatbot 🤖")
@@ -121,30 +119,27 @@ def ask_mistral(prompt):
 
 # Handle query
 if query:
-    if index is not None:
-        query_embedding = get_query_embedding(query).reshape(1, -1)
-        D, I = index.search(query_embedding, k=2)
-        retrieved_chunks = [chunks[i] for i in I[0]]
+    query_embedding = get_query_embedding(query).reshape(1, -1)
+    D, I = index.search(query_embedding, k=2)
+    retrieved_chunks = [chunks[i] for i in I[0] if i < len(chunks)]
 
-        # Construct prompt
-        prompt = f"""
-        Context:
-        {' '.join(retrieved_chunks)}
-        Query: {query}
-        Answer:
-        """
+    # Construct prompt
+    prompt = f"""
+    Context:
+    {' '.join(retrieved_chunks)}
+    Query: {query}
+    Answer:
+    """
 
-        # Display selected policy
-        st.markdown(f"📌 **You selected:**  📜 {selected_policy}")
+    # Display selected policy
+    st.markdown(f"📌 **You selected:**  📜 {selected_policy}")
 
-        # Generate answer
-        answer = ask_mistral(prompt)
+    # Generate answer
+    answer = ask_mistral(prompt)
 
-        # Display answer
-        st.markdown("✅ **Answer:**")
-        st.write(answer)
-    else:
-        st.error("🚨 No embeddings found! Ensure policies were fetched correctly.")
+    # Display answer
+    st.markdown("✅ **Answer:**")
+    st.write(answer)
 
 # Footer
 st.markdown("---")
