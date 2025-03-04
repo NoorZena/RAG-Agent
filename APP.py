@@ -8,7 +8,7 @@ from bs4 import BeautifulSoup
 from mistralai import Mistral, UserMessage
 
 # Set API Key for Mistral
-os.environ["MISTRAL_API_KEY"] = "your_api_key_here"
+os.environ["MISTRAL_API_KEY"] = "pSnb6dOIGJqlPqhVuNo9nxC02ilfYPls"
 api_key = os.getenv("MISTRAL_API_KEY")
 
 # Ensure API key is set
