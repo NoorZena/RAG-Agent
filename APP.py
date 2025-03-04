@@ -137,4 +137,4 @@ if query:
 
 # 🎉 Footer
 st.markdown("---")
-st.markdown("🤖 **Built with Mistral AI, FAISS & Streamlit** | 🚀 **By Noor Zena Students**")
+st.markdown("🤖 **Built with Mistral AI, FAISS & Streamlit** | 🚀 **By Noor Zena**")
