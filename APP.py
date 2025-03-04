@@ -28,7 +28,10 @@ def get_policies():
     
     return cleaned_policies[:10]  # Limit to 10 policies
 
+# Fetch policies and chunk text
 policies = get_policies()
+policy_titles = [f"Policy {i+1}: {policies[i][:50]}..." for i in range(len(policies))]  # Display only first 50 chars
+
 chunks = [chunk for policy in policies for chunk in policy.split(". ")]
 
 # Generate Embeddings with API Rate Limit Handling
@@ -61,8 +64,14 @@ d = len(text_embeddings[0])  # Embedding dimension
 index = faiss.IndexFlatL2(d)
 index.add(np.array(text_embeddings))
 
-# Streamlit UI
+# ------------------ Streamlit UI ------------------
+
 st.title("UDST Policy Chatbot")
+
+# Dropdown to select a policy
+selected_policy = st.selectbox("Select a UDST Policy:", policy_titles)
+
+# Query input box
 query = st.text_input("Enter your question:")
 
 if query:
@@ -80,4 +89,8 @@ if query:
     """
 
     response = client.chat.complete(model="mistral-large-latest", messages=[UserMessage(content=prompt)])
+    
+    # Display selected policy info
+    st.write(f"**You selected:** {selected_policy}")
+    st.write("### Answer:")
     st.write(response.choices[0].message.content)
