@@ -1,128 +1,113 @@
 import os
 import time
-import faiss
 import numpy as np
 import streamlit as st
 import requests
+import faiss
 from bs4 import BeautifulSoup
 from mistralai import Mistral, UserMessage
 
-# 🎯 Set API Key
-os.environ["MISTRAL_API_KEY"] = "pSnb6dOIGJqlPqhVuNo9nxC02ilfYPls"
+# Set API Key for Mistral
+os.environ["MISTRAL_API_KEY"] = "your_api_key_here"
 api_key = os.getenv("MISTRAL_API_KEY")
 
-# 🚨 Check if API Key is missing
+# Ensure API key is set
 if not api_key:
-    st.error("❌ API Key is missing! Please set your `MISTRAL_API_KEY`.")
+    st.error("🚨 API Key is missing! Set your MISTRAL_API_KEY.")
     st.stop()
 
-# 📜 Function to fetch & clean UDST policies
+# Initialize Mistral Client
+client = Mistral(api_key=api_key)
+
+# Function to scrape UDST policies
 def get_policies():
-    """
-    Fetches **only actual UDST policies** from the website.
-    Filters out irrelevant text (like quick links or menus).
-    Ensures at least 10 policies are extracted.
-    """
     url = "https://www.udst.edu.qa/about-udst/institutional-excellence-ie/policies-and-procedures"
     response = requests.get(url)
 
     if response.status_code != 200:
-        st.error("⚠️ Failed to fetch UDST policies. Check the website status.")
-        return []
+        raise ValueError("Failed to fetch UDST policies. Check the website status.")
 
     soup = BeautifulSoup(response.text, "html.parser")
+    raw_policies = [tag.text.strip() for tag in soup.find_all("div") if tag.text.strip()]
 
-    # Extract potential policy titles (contains "Policy" keyword)
-    policy_titles = [tag.text.strip() for tag in soup.find_all(["h2", "h3"]) if "Policy" in tag.text]
+    # Clean policies: remove unnecessary newlines and whitespace
+    cleaned_policies = [" ".join(policy.split()) for policy in raw_policies]
+    
+    return cleaned_policies[:10] if len(cleaned_policies) >= 10 else cleaned_policies
 
-    # Remove duplicates and extra spaces
-    policy_titles = list(set(policy_titles))
-
-    # Ensure at least 10 valid policies (fallback if fewer are found)
-    if len(policy_titles) < 10:
-        st.warning("⚠️ Less than 10 policies found. Adding placeholders.")
-        while len(policy_titles) < 10:
-            policy_titles.append(f"Placeholder Policy {len(policy_titles)+1}")
-
-    return policy_titles[:10]  # Keep only 10 policies
-
-# 📥 Fetch policies and prepare dropdown options
+# Fetch policies and ensure at least 10 are available
 policies = get_policies()
+if len(policies) < 10:
+    st.warning("⚠️ Less than 10 policies found. Adding placeholders.")
+    policies += [f"Placeholder Policy {i+1}" for i in range(10 - len(policies))]
 
-if policies:
-    policy_titles = [f"📜 Policy {i+1}: {policies[i]}" for i in range(len(policies))]
-else:
-    policy_titles = ["❌ No policies found. Please check extraction."]
-
-# ✂️ Function to chunk text for processing
+# Function to chunk policies for embeddings
 def chunk_text(text, chunk_size=256):
-    """
-    Splits text into smaller chunks for efficient processing.
-    """
     return [text[i:i+chunk_size] for i in range(0, len(text), chunk_size)]
 
-# 📦 Process all policies into chunks
+# Process policies into chunks
 chunks = [chunk for policy in policies for chunk in chunk_text(policy)]
 
-# 🧠 Generate Embeddings with API Rate Limit Handling
+# Function to get embeddings
 def get_embeddings(chunks, batch_size=1, delay=3, max_retries=5):
-    """
-    Generates embeddings for text chunks using Mistral AI.
-    Uses batch processing with retry logic to avoid rate limits.
-    """
-    client = Mistral(api_key=api_key)
     embeddings = []
-
     for i in range(0, len(chunks), batch_size):
-        batch = chunks[i:i+batch_size]
+        batch = chunks[i:i + batch_size]
         retries = 0
-
         while retries < max_retries:
             try:
                 response = client.embeddings.create(model="mistral-embed", inputs=batch)
                 embeddings.extend([e.embedding for e in response.data])
-                time.sleep(delay)  # Delay to prevent hitting rate limits
-                break  # Exit retry loop if successful
+                time.sleep(delay)
+                break
             except Exception as e:
-                print(f"⚠️ API Error: {e}. Retrying in {delay * 2} seconds...")
+                st.warning(f"⚠️ API Error: {e}. Retrying in {delay * 2} seconds...")
                 time.sleep(delay * 2)
                 retries += 1
-
         if retries == max_retries:
-            print("⏳ Max retries reached. Skipping batch.")
-
+            st.error("🚨 Max retries reached. Skipping batch.")
     return embeddings
 
-# 🧠 Generate embeddings for policies
+# Generate embeddings
 text_embeddings = get_embeddings(chunks)
 
-# 🔍 Store Embeddings in FAISS Vector Database
-d = len(text_embeddings[0])  # Embedding dimension
+# Store embeddings in FAISS
+d = len(text_embeddings[0]) if text_embeddings else 0
 index = faiss.IndexFlatL2(d)
 index.add(np.array(text_embeddings))
 
-# 🎨 Streamlit UI
+# Streamlit UI Setup
 st.title("📜 UDST Policy Chatbot 🤖")
-st.markdown("Ask about **UDST policies** and get instant answers! 🎓")
+st.write("Ask about **UDST policies** and get instant answers! 🎓")
 
-# 📌 Dropdown list to select a policy
-selected_policy = st.selectbox("📜 Select a UDST Policy:", policy_titles)
+# Dropdown for policy selection
+selected_policy = st.selectbox(
+    "📜 Select a UDST Policy:", [f"Policy {i+1}: {policies[i]}" for i in range(len(policies))]
+)
 
-# ✏️ Query input box
+# Text input for query
 query = st.text_input("💬 Enter your question:")
 
-# 🔎 Process Query when user enters text
-if query:
-    client = Mistral(api_key=api_key)
-    
-    # 🧠 Generate embedding for the query
-    query_embedding = np.array(client.embeddings.create(model="mistral-embed", inputs=[query]).data[0].embedding).reshape(1, -1)
+# Function to get query embedding
+def get_query_embedding(query):
+    response = client.embeddings.create(model="mistral-embed", inputs=[query])
+    return np.array(response.data[0].embedding)
 
-    # 🔍 Retrieve most relevant chunks
+# Function to retrieve and answer questions
+def ask_mistral(prompt):
+    response = client.chat.complete(
+        model="mistral-large-latest",
+        messages=[UserMessage(content=prompt)]
+    )
+    return response.choices[0].message.content
+
+# Handle query
+if query:
+    query_embedding = get_query_embedding(query).reshape(1, -1)
     D, I = index.search(query_embedding, k=2)
     retrieved_chunks = [chunks[i] for i in I[0]]
 
-    # 📝 Create prompt for chatbot
+    # Construct prompt
     prompt = f"""
     Context:
     {' '.join(retrieved_chunks)}
@@ -130,14 +115,16 @@ if query:
     Answer:
     """
 
-    # 🗣️ Ask Mistral AI
-    response = client.chat.complete(model="mistral-large-latest", messages=[UserMessage(content=prompt)])
+    # Display selected policy
+    st.markdown(f"📌 **You selected:**  📜 {selected_policy}")
 
-    # ✅ Display selected policy and chatbot response
-    st.write(f"📌 **You selected:** {selected_policy}")
-    st.markdown("### ✅ Answer:")
-    st.write(response.choices[0].message.content)
+    # Generate answer
+    answer = ask_mistral(prompt)
 
-# 🎉 Footer
+    # Display answer
+    st.markdown("✅ **Answer:**")
+    st.write(answer)
+
+# Footer
 st.markdown("---")
 st.markdown("🤖 **Built with Mistral AI, FAISS & Streamlit** | 🚀 **By Noor Zena**")
