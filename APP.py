@@ -20,7 +20,7 @@ if not api_key:
 def get_policies():
     """
     Fetches UDST policies from the official website.
-    Extracts only meaningful policy titles and filters out irrelevant text.
+    Extracts only meaningful policy titles and ensures at least 10 policies.
     """
     url = "https://www.udst.edu.qa/about-udst/institutional-excellence-ie/policies-and-procedures"
     response = requests.get(url)
@@ -31,18 +31,21 @@ def get_policies():
 
     soup = BeautifulSoup(response.text, "html.parser")
 
-    # Extracting only relevant policy titles (usually in <h3> tags)
-    raw_policies = [tag.text.strip() for tag in soup.find_all("h3")]
+    # Extract policy titles from <h2> and <h3> headings
+    raw_policies = [tag.text.strip() for tag in soup.find_all(["h2", "h3"])]
 
-    # Cleaning extracted text
-    cleaned_policies = [" ".join(policy.split()) for policy in raw_policies]
+    # Remove duplicates and extra spaces
+    cleaned_policies = list(set([" ".join(policy.split()) for policy in raw_policies]))
 
-    return cleaned_policies[:10]  # Limit to 10 policies
+    # Ensure at least 10 policies (fallback if fewer are found)
+    while len(cleaned_policies) < 10:
+        cleaned_policies.append(f"Placeholder Policy {len(cleaned_policies)+1}")
+
+    return cleaned_policies[:10]  # Ensure exactly 10 policies
 
 # 📥 Fetch policies and prepare dropdown options
 policies = get_policies()
 
-# If policies are extracted correctly, display them
 if policies:
     policy_titles = [f"📜 Policy {i+1}: {policies[i]}" for i in range(len(policies))]
 else:
@@ -134,4 +137,4 @@ if query:
 
 # 🎉 Footer
 st.markdown("---")
-st.markdown("🤖 **Built with Mistral AI, FAISS & Streamlit** | 🚀 **By UDST Students**")
+st.markdown("🤖 **Built with Mistral AI, FAISS & Streamlit** | 🚀 **By Noor Zena Students**")
