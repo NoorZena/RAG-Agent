@@ -32,7 +32,7 @@ def get_policies():
 
     soup = BeautifulSoup(response.text, "html.parser")
 
-    # Try extracting from <h3> and <h2> first (most likely where policies are)
+    # Extract potential policy titles (contains "Policy" keyword)
     policy_titles = [tag.text.strip() for tag in soup.find_all(["h2", "h3"]) if "Policy" in tag.text]
 
     # Remove duplicates and extra spaces
@@ -40,13 +40,21 @@ def get_policies():
 
     # Ensure at least 10 valid policies (fallback if fewer are found)
     if len(policy_titles) < 10:
-        st.warning("⚠️ Less than 10 policies were found. Some placeholders added.")
+        st.warning("⚠️ Less than 10 policies found. Adding placeholders.")
         while len(policy_titles) < 10:
             policy_titles.append(f"Placeholder Policy {len(policy_titles)+1}")
 
     return policy_titles[:10]  # Keep only 10 policies
 
-# ✂️ Chunk the policy text for processing
+# 📥 Fetch policies and prepare dropdown options
+policies = get_policies()
+
+if policies:
+    policy_titles = [f"📜 Policy {i+1}: {policies[i]}" for i in range(len(policies))]
+else:
+    policy_titles = ["❌ No policies found. Please check extraction."]
+
+# ✂️ Function to chunk text for processing
 def chunk_text(text, chunk_size=256):
     """
     Splits text into smaller chunks for efficient processing.
